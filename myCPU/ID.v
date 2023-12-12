@@ -7,15 +7,15 @@ module ID(
     
     output wire stallreq,
 
-    input wire [`IF_TO_ID_WD-1:0] if_to_id_bus,
+    input wire [`IF_TO_ID_WD-1:0] if_to_id_bus,//IF段传给ID段的数据
 
-    input wire [31:0] inst_sram_rdata,
+    input wire [31:0] inst_sram_rdata,//上一步中IF取到的指令
 
-    input wire [`WB_TO_RF_WD-1:0] wb_to_rf_bus,
+    input wire [`WB_TO_RF_WD-1:0] wb_to_rf_bus,//WB段传给ID段的数据
 
-    output wire [`ID_TO_EX_WD-1:0] id_to_ex_bus,
+    output wire [`ID_TO_EX_WD-1:0] id_to_ex_bus,//ID段要传给EX段的数据
 
-    output wire [`BR_WD-1:0] br_bus 
+    output wire [`BR_WD-1:0] br_bus //跳转指令，传给IF段的
 );
 
     reg [`IF_TO_ID_WD-1:0] if_to_id_bus_r;
@@ -36,12 +36,12 @@ module ID(
         // end
         else if (stall[1]==`Stop && stall[2]==`NoStop) begin
             if_to_id_bus_r <= `IF_TO_ID_WD'b0;
-        end
+        end//如果复位或者暂停的话就不要IF段传过来的数据了
         else if (stall[1]==`NoStop) begin
             if_to_id_bus_r <= if_to_id_bus;
         end
     end
-    
+    //inst就是上一步中IF取到的指令
     assign inst = inst_sram_rdata;
     assign {
         ce,
@@ -80,17 +80,18 @@ module ID(
 
     wire [31:0] rdata1, rdata2;
 
-    regfile u_regfile(
+    regfile u_regfile(//对寄存器操作，见regfile.v
     	.clk    (clk    ),
-        .raddr1 (rs ),
-        .rdata1 (rdata1 ),
-        .raddr2 (rt ),
-        .rdata2 (rdata2 ),
-        .we     (wb_rf_we     ),
-        .waddr  (wb_rf_waddr  ),
-        .wdata  (wb_rf_wdata  )
+        .raddr1 (rs ),//读取的第一个寄存器rs
+        .rdata1 (rdata1 ),//rs中读出来的数据
+        .raddr2 (rt ),//读取的第二个寄存器rt
+        .rdata2 (rdata2 ),//rt中读出来的数据
+        .we     (wb_rf_we     ),//是否能写入寄存器的信号
+        .waddr  (wb_rf_waddr  ),//写入的寄存器地址
+        .wdata  (wb_rf_wdata  )//写入的内容
     );
 
+    //分解IF段取到的指令inst，划分为以下片段
     assign opcode = inst[31:26];
     assign rs = inst[25:21];
     assign rt = inst[20:16];
@@ -131,8 +132,8 @@ module ID(
     );
 
     
-    assign inst_ori     = op_d[6'b00_1101];
-    assign inst_lui     = op_d[6'b00_1111];
+    assign inst_ori     = op_d[6'b00_1101];//若opc是001101，则这个为1，代表译码得出是ori指令
+    assign inst_lui     = op_d[6'b00_1111];//若opc是001111，则这个为1，代表译码得出是lui指令
     assign inst_addiu   = op_d[6'b00_1001];
     assign inst_beq     = op_d[6'b00_0100];
 
@@ -175,10 +176,11 @@ module ID(
     assign op_sra = 1'b0;
     assign op_lui = inst_lui;
 
+    //在下一步中，ALU算术逻辑单元要执行什么任务，对应的那一位就是1
     assign alu_op = {op_add, op_sub, op_slt, op_sltu,
                      op_and, op_nor, op_or, op_xor,
                      op_sll, op_srl, op_sra, op_lui};
-
+    //这个alu_op会传给EX段
 
 
     // load and store enable
@@ -224,22 +226,22 @@ module ID(
         rdata2          // 31:0
     };
 
-
+    //以下应该是beq相等转移指令的内容
     wire br_e;
     wire [31:0] br_addr;
-    wire rs_eq_rt;
-    wire rs_ge_z;
+    wire rs_eq_rt;//这个beq指令有用到
+    wire rs_ge_z;//下面这四个都对应其它的跳转指令，让我们自己扩展的，比如这个应该是对应bgtz指令
     wire rs_gt_z;
     wire rs_le_z;
     wire rs_lt_z;
     wire [31:0] pc_plus_4;
     assign pc_plus_4 = id_pc + 32'h4;
 
-    assign rs_eq_rt = (rdata1 == rdata2);
+    assign rs_eq_rt = (rdata1 == rdata2);//rs和rt的值是否相等？
 
-    assign br_e = inst_beq & rs_eq_rt;
+    assign br_e = inst_beq & rs_eq_rt;//若确实是beq指令且rs和rt的值相等，那么可以跳转
     assign br_addr = inst_beq ? (pc_plus_4 + {{14{inst[15]}},inst[15:0],2'b0}) : 32'b0;
-
+    //是beq指令，则跳转地址；否则跳转地址设为0
     assign br_bus = {
         br_e,
         br_addr
